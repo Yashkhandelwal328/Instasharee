@@ -1,0 +1,5 @@
+com/instashare/service/FileSharer$FileSenderHandler.class
+com/instashare/InstashareApplication.class
+com/instashare/utils/UploadUtils.class
+com/instashare/service/FileSharer.class
+com/instashare/controller/FileController.class
