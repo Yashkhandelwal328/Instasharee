@@ -49,8 +49,8 @@ export default function Home() {
                 </svg>
               </div>
               <div>
-                <strong>Instant Transfer</strong>
-                <span>Files move peer-to-peer at full network speed.</span>
+                <strong>Direct P2P Transfer</strong>
+                <span>Files stream directly between devices — zero servers involved.</span>
               </div>
             </li>
             <li className="feature">
@@ -61,7 +61,7 @@ export default function Home() {
               </div>
               <div>
                 <strong>End-to-End Encrypted</strong>
-                <span>Your files never touch our servers.</span>
+                <span>WebRTC DTLS encryption. Nobody can intercept your files.</span>
               </div>
             </li>
             <li className="feature">
@@ -73,8 +73,8 @@ export default function Home() {
                 </svg>
               </div>
               <div>
-                <strong>Works Everywhere</strong>
-                <span>Browser, desktop, or mobile — no install needed.</span>
+                <strong>No Limits</strong>
+                <span>Any file type, any size, unlimited transfers.</span>
               </div>
             </li>
           </ul>
@@ -118,13 +118,20 @@ export default function Home() {
                     </svg>
                   </div>
                   <p className="drop-text">Drop files here or <span className="drop-cta">browse</span></p>
-                  <p className="drop-sub">Any file type · Any size</p>
+                  <p className="drop-sub">Any file · No size limits · Direct P2P</p>
                 </div>
                 <ul id="file-list" className="file-list hidden"></ul>
                 <button id="btn-send" className="btn-primary btn-disabled" disabled>Generate Key &amp; Send</button>
               </div>
 
-              {/* State: waiting */}
+              {/* State: connecting (setting up WebRTC) */}
+              <div id="send-connecting" className="centered-panel hidden">
+                <div className="spinner" aria-label="Connecting"></div>
+                <p className="centered-title">Setting up P2P connection…</p>
+                <p className="centered-sub">Preparing secure direct channel</p>
+              </div>
+
+              {/* State: waiting for peer */}
               <div id="send-waiting" className="centered-panel hidden">
                 <p className="centered-label">Share this key with the receiver</p>
                 <div id="send-key-digits" className="key-digits"></div>
@@ -132,25 +139,25 @@ export default function Home() {
                 <p className="expires-text">Expires in <span id="expires-count" className="expires-count">10:00</span></p>
                 <div className="waiting-hint">
                   <div className="pulse-ring"></div>
-                  <span>Waiting for receiver to connect…</span>
+                  <span>Waiting for peer to connect…</span>
                 </div>
                 <button id="btn-cancel-send" className="btn-secondary">Cancel</button>
               </div>
 
-              {/* State: uploading */}
-              <div id="send-uploading" className="centered-panel hidden">
-                <div className="spinner" aria-label="Uploading"></div>
-                <p className="centered-title">Uploading files…</p>
-                <p className="centered-sub">Securely storing your files</p>
-              </div>
-
-              {/* State: transferring */}
+              {/* State: transferring (P2P streaming) */}
               <div id="send-transferring" className="centered-panel hidden">
+                <div className="p2p-status">
+                  <div className="p2p-dot p2p-dot-active"></div>
+                  <span>P2P Connected — Streaming files</span>
+                </div>
                 <p className="progress-label">Sending files…</p>
                 <div className="progress-track">
                   <div id="send-bar" className="progress-fill" style={{ width: '0%' }}></div>
                 </div>
-                <p id="send-pct" className="progress-pct">0%</p>
+                <div className="progress-meta">
+                  <span id="send-pct" className="progress-pct">0%</span>
+                  <span id="send-speed" className="progress-speed"></span>
+                </div>
               </div>
 
               {/* State: done */}
@@ -201,13 +208,13 @@ export default function Home() {
               {/* State: searching */}
               <div id="recv-searching" className="centered-panel hidden">
                 <div className="spinner" aria-label="Connecting"></div>
-                <p className="centered-title">Connecting to sender…</p>
+                <p className="centered-title">Looking for sender…</p>
                 <p id="recv-searching-key" className="centered-sub"></p>
               </div>
 
               {/* State: found */}
               <div id="recv-found" className="centered-panel hidden">
-                <p className="centered-title">Files ready to download</p>
+                <p className="centered-title">Files ready to receive</p>
                 <ul id="recv-file-list" className="file-list"></ul>
                 <button id="btn-download" className="btn-primary btn-icon">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -219,13 +226,20 @@ export default function Home() {
                 </button>
               </div>
 
-              {/* State: downloading */}
+              {/* State: downloading (P2P receiving) */}
               <div id="recv-downloading" className="centered-panel hidden">
-                <p className="progress-label">Downloading…</p>
+                <div className="p2p-status">
+                  <div className="p2p-dot p2p-dot-active"></div>
+                  <span id="recv-status">Establishing P2P connection…</span>
+                </div>
+                <p className="progress-label">Receiving…</p>
                 <div className="progress-track">
                   <div id="recv-bar" className="progress-fill" style={{ width: '0%' }}></div>
                 </div>
-                <p id="recv-pct" className="progress-pct">0%</p>
+                <div className="progress-meta">
+                  <span id="recv-pct" className="progress-pct">0%</span>
+                  <span id="recv-speed" className="progress-speed"></span>
+                </div>
               </div>
 
               {/* State: done */}

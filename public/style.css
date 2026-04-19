@@ -371,7 +371,35 @@ button { font-family: var(--font-body); cursor: pointer; }
   background-size: 200% 100%;
   animation: shimmer 1.4s infinite;
 }
+.progress-meta {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%;
+}
 .progress-pct { font-size: 13px; color: var(--slate-500); font-variant-numeric: tabular-nums; }
+.progress-speed {
+  font-size: 12px; color: var(--blue); font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── P2P Connection Status ────────────────────────────────────────────────── */
+.p2p-status {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 14px; border-radius: 99px;
+  background: rgba(16,185,129,.08); border: 1px solid rgba(16,185,129,.18);
+  font-size: 12px; font-weight: 600; color: var(--green);
+}
+.p2p-dot {
+  width: 8px; height: 8px; border-radius: 99px;
+  background: var(--green); flex-shrink: 0;
+}
+.p2p-dot-active {
+  animation: p2p-pulse 1.5s ease-in-out infinite;
+  box-shadow: 0 0 0 2px rgba(16,185,129,.3);
+}
+@keyframes p2p-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 2px rgba(16,185,129,.3); }
+  50% { opacity: .6; box-shadow: 0 0 0 5px rgba(16,185,129,.1); }
+}
 
 /* ─── Done / Error ─────────────────────────────────────────────────────────── */
 .success-icon {

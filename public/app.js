@@ -1,17 +1,29 @@
 /* ─────────────────────────────────────────────────────────────────────────────
    instashare.io — app.js
-   File transfer via Neon PostgreSQL backend.
+   True Peer-to-Peer file transfer via WebRTC DataChannels.
    
-   API Routes:
-     POST /api/upload      — multipart/form-data → returns { key }
-     GET  /api/check/:key  — returns { exists: true/false }
-     GET  /api/download/:key — returns { files: [{name, size, type, data}] }
+   The server is ONLY used for signaling (exchanging WebRTC offers/answers).
+   File data flows directly browser-to-browser — never touches any server.
+   
+   Signaling API:
+     POST /api/signal          — create room (sender) or submit answer (receiver)
+     GET  /api/signal?key=xxx  — get room offer (receiver)
+     GET  /api/signal/stream?key=xxx — SSE stream for signaling events (sender)
 ───────────────────────────────────────────────────────────────────────────── */
 
 'use strict';
 
 /* ── Constants ────────────────────────────────────────────────────────────── */
-const EXPIRE_SECS = 600;
+const CHUNK_SIZE   = 64 * 1024;    // 64 KB per DataChannel message
+const BUFFER_THRESHOLD = 1024 * 1024; // 1 MB — pause sending when buffered > this
+
+const ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun2.l.google.com:19302' },
+  { urls: 'stun:stun3.l.google.com:19302' },
+  { urls: 'stun:stun4.l.google.com:19302' },
+];
 
 /* ── Utility helpers ──────────────────────────────────────────────────────── */
 function fmtSize(b) {
@@ -19,6 +31,13 @@ function fmtSize(b) {
   if (b < 1_048_576)   return (b / 1024).toFixed(1) + ' KB';
   if (b < 1_073_741_824) return (b / 1_048_576).toFixed(1) + ' MB';
   return (b / 1_073_741_824).toFixed(2) + ' GB';
+}
+
+function fmtSpeed(bytesPerSec) {
+  if (bytesPerSec < 1024)        return Math.round(bytesPerSec) + ' B/s';
+  if (bytesPerSec < 1_048_576)   return (bytesPerSec / 1024).toFixed(1) + ' KB/s';
+  if (bytesPerSec < 1_073_741_824) return (bytesPerSec / 1_048_576).toFixed(1) + ' MB/s';
+  return (bytesPerSec / 1_073_741_824).toFixed(2) + ' GB/s';
 }
 
 function getExt(name = '') {
@@ -37,7 +56,9 @@ const EXT_COLORS = {
   pdf: '#ef4444', jpg: '#f59e0b', jpeg: '#f59e0b', png: '#10b981',
   gif: '#8b5cf6', mp4: '#3b82f6', mp3: '#ec4899', zip: '#6366f1',
   rar: '#6366f1', docx: '#2563eb', doc: '#2563eb', xlsx: '#059669',
-  txt: '#64748b',
+  txt: '#64748b', svg: '#8b5cf6', webp: '#f59e0b', mkv: '#3b82f6',
+  avi: '#3b82f6', mov: '#3b82f6', wav: '#ec4899', flac: '#ec4899',
+  '7z': '#6366f1', tar: '#6366f1', gz: '#6366f1',
 };
 
 function fileIconHTML(ext) {
@@ -104,7 +125,7 @@ function show(el) { el?.classList.remove('hidden'); }
 function hide(el) { el?.classList.add('hidden'); }
 function animateIn(el, cls = 'animate-scale-in') {
   el?.classList.remove(cls);
-  void el?.offsetWidth; // reflow
+  void el?.offsetWidth;
   el?.classList.add(cls);
 }
 
@@ -129,13 +150,17 @@ function initTabs() {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
-   SEND MANAGER
+   SEND MANAGER — WebRTC P2P Sender
 ══════════════════════════════════════════════════════════════════════════════ */
 const sendMgr = (() => {
-  let files    = [];    // { file, id }
-  let sendKey  = '';
-  let timerRef = null;
-  let expires  = EXPIRE_SECS;
+  let files     = [];    // { file, id }
+  let sendKey   = '';
+  let timerRef  = null;
+  let expires   = 600;
+  let pc        = null;  // RTCPeerConnection
+  let dc        = null;  // DataChannel
+  let sseSource = null;  // EventSource for signaling
+  let aborted   = false;
 
   /* ── File picking ─────────────────────────────────────────────────────── */
   function initSend() {
@@ -161,7 +186,7 @@ const sendMgr = (() => {
     $('btn-cancel-send')?.addEventListener('click', cancelSend);
 
     $('btn-send-reset')?.addEventListener('click', () => {
-      clearInterval(timerRef);
+      cleanup();
       files = []; sendKey = '';
       const fileList = $('file-list');
       if (fileList) fileList.innerHTML = '';
@@ -170,6 +195,7 @@ const sendMgr = (() => {
       btnSend.classList.add('btn-disabled');
       if ($('send-bar')) $('send-bar').style.width = '0%';
       if ($('send-pct')) $('send-pct').textContent = '0%';
+      if ($('send-speed')) $('send-speed').textContent = '';
       showState('idle');
     });
   }
@@ -201,50 +227,207 @@ const sendMgr = (() => {
     btnSend.classList.remove('btn-disabled');
   }
 
-  /* ── Send flow (upload to server) ────────────────────────────────────── */
+  /* ── P2P Send Flow ────────────────────────────────────────────────────── */
   async function startSend() {
     if (!files.length) return;
+    aborted = false;
 
-    // Show uploading spinner
-    showState('uploading');
+    showState('connecting');
 
     try {
-      // Build FormData with all files
-      const formData = new FormData();
-      files.forEach(({ file }) => formData.append('files', file));
+      // 1. Create RTCPeerConnection
+      pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
 
-      // Upload to server
-      const res = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
+      // 2. Create DataChannel
+      dc = pc.createDataChannel('fileTransfer', {
+        ordered: true,
       });
 
-      if (!res.ok) {
-        throw new Error('Upload failed');
-      }
+      dc.binaryType = 'arraybuffer';
 
-      const data = await res.json();
-      sendKey = data.key;
-      expires = EXPIRE_SECS;
+      // When DataChannel opens → start streaming files
+      dc.onopen = () => {
+        if (aborted) return;
+        showState('transferring');
+        streamFiles();
+      };
 
-      // Render waiting state
+      dc.onerror = (e) => {
+        console.error('DataChannel error:', e);
+      };
+
+      // 3. Gather ICE candidates
+      const iceCandidates = [];
+      const iceGatheringDone = new Promise((resolve) => {
+        pc.onicecandidate = (e) => {
+          if (e.candidate) {
+            iceCandidates.push(e.candidate.toJSON());
+          } else {
+            resolve(); // All candidates gathered
+          }
+        };
+        // Timeout fallback
+        setTimeout(resolve, 5000);
+      });
+
+      // 4. Create offer
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      // Wait for ICE gathering
+      await iceGatheringDone;
+
+      // 5. Build file metadata
+      const filesMeta = files.map(({ file }) => ({
+        name: file.name,
+        size: file.size,
+        type: file.type || 'application/octet-stream',
+      }));
+
+      // 6. Send offer + metadata to signaling server
+      const res = await fetch('/api/signal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'create',
+          offer: pc.localDescription.toJSON(),
+          filesMeta,
+        }),
+      });
+
+      if (!res.ok) throw new Error('Failed to create signaling room');
+
+      const { key } = await res.json();
+      sendKey = key;
+      expires = 600;
+
+      // Show waiting state with key
       showState('waiting');
       renderKeyDigits(sendKey);
       $('send-qr').innerHTML = qrSVG(sendKey);
       $('expires-count').textContent = fmtTime(expires);
 
-      // Countdown
+      // Countdown timer
       timerRef = setInterval(() => {
         expires--;
         $('expires-count').textContent = fmtTime(expires);
-        if (expires <= 0) { clearInterval(timerRef); cancelSend(); }
+        if (expires <= 0) { cancelSend(); }
       }, 1000);
 
+      // 7. Subscribe to SSE for receiver's answer
+      sseSource = new EventSource(`/api/signal/stream?key=${sendKey}`);
+
+      sseSource.onmessage = async (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+
+          if (msg.type === 'answer' && msg.answer) {
+            // Set remote description (receiver's answer)
+            await pc.setRemoteDescription(new RTCSessionDescription(msg.answer));
+
+            // Add ICE candidates from receiver
+            if (msg.candidates) {
+              for (const c of msg.candidates) {
+                try {
+                  await pc.addIceCandidate(new RTCIceCandidate(c));
+                } catch { /* ignore duplicate candidates */ }
+              }
+            }
+
+            // Close SSE — signaling is done
+            sseSource.close();
+            sseSource = null;
+            clearInterval(timerRef);
+          }
+
+          if (msg.type === 'ice' && msg.candidate) {
+            try {
+              await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+            } catch { /* ignore */ }
+          }
+
+          if (msg.type === 'expired') {
+            cancelSend();
+          }
+        } catch (err) {
+          console.error('SSE message error:', err);
+        }
+      };
+
+      sseSource.onerror = () => {
+        // SSE will auto-reconnect, but if room expired it'll 404
+      };
+
     } catch (err) {
-      console.error('Upload error:', err);
+      console.error('Send setup error:', err);
+      cleanup();
       showState('idle');
-      alert('Upload failed. Please try again.');
+      alert('Connection setup failed. Please try again.');
     }
+  }
+
+  /* ── Stream files over DataChannel ────────────────────────────────────── */
+  async function streamFiles() {
+    const totalSize = files.reduce((sum, { file }) => sum + file.size, 0);
+    let totalSent = 0;
+    const startTime = Date.now();
+
+    // Send file count first
+    dc.send(JSON.stringify({ type: 'meta', fileCount: files.length, totalSize }));
+
+    for (const { file } of files) {
+      if (aborted) return;
+
+      // Send file header
+      dc.send(JSON.stringify({
+        type: 'fileStart',
+        name: file.name,
+        size: file.size,
+        mimeType: file.type || 'application/octet-stream',
+      }));
+
+      // Read and send file in chunks
+      let offset = 0;
+      while (offset < file.size) {
+        if (aborted) return;
+
+        const slice = file.slice(offset, offset + CHUNK_SIZE);
+        const buffer = await slice.arrayBuffer();
+
+        // Flow control — wait if buffer is getting full
+        while (dc.bufferedAmount > BUFFER_THRESHOLD) {
+          await new Promise((r) => setTimeout(r, 50));
+          if (aborted) return;
+        }
+
+        dc.send(buffer);
+        offset += buffer.byteLength;
+        totalSent += buffer.byteLength;
+
+        // Update progress
+        const pct = Math.round((totalSent / totalSize) * 100);
+        const elapsed = (Date.now() - startTime) / 1000;
+        const speed = elapsed > 0 ? totalSent / elapsed : 0;
+
+        if ($('send-bar')) $('send-bar').style.width = pct + '%';
+        if ($('send-pct')) $('send-pct').textContent = pct + '%';
+        if ($('send-speed')) $('send-speed').textContent = fmtSpeed(speed);
+      }
+
+      // Signal end of this file
+      dc.send(JSON.stringify({ type: 'fileEnd', name: file.name }));
+    }
+
+    // Signal all files done
+    dc.send(JSON.stringify({ type: 'allDone' }));
+
+    // Show completion
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    const avgSpeed = fmtSpeed(totalSent / (elapsed || 1));
+    if ($('send-done-sub')) {
+      $('send-done-sub').textContent = `${files.length} file${files.length > 1 ? 's' : ''} · ${fmtSize(totalSent)} · ${elapsed}s · ${avgSpeed}`;
+    }
+    showState('done');
   }
 
   function renderKeyDigits(key) {
@@ -254,15 +437,23 @@ const sendMgr = (() => {
   }
 
   function cancelSend() {
-    clearInterval(timerRef);
-    sendKey = '';
+    aborted = true;
+    cleanup();
     showState('idle');
+  }
+
+  function cleanup() {
+    clearInterval(timerRef);
+    if (sseSource) { sseSource.close(); sseSource = null; }
+    if (dc) { try { dc.close(); } catch {} dc = null; }
+    if (pc) { try { pc.close(); } catch {} pc = null; }
+    sendKey = '';
   }
 
   /* ── State machine ────────────────────────────────────────────────────── */
   const STATES = {
     idle: 'send-idle',
-    uploading: 'send-uploading',
+    connecting: 'send-connecting',
     waiting: 'send-waiting',
     transferring: 'send-transferring',
     done: 'send-done'
@@ -276,11 +467,19 @@ const sendMgr = (() => {
 })();
 
 /* ══════════════════════════════════════════════════════════════════════════════
-   RECEIVE MANAGER
+   RECEIVE MANAGER — WebRTC P2P Receiver
 ══════════════════════════════════════════════════════════════════════════════ */
 const recvMgr = (() => {
-  let recvData = null;
-  let currentKey = '';
+  let pc           = null;
+  let currentKey   = '';
+  let receivedFiles = [];
+  let currentFile  = null;
+  let currentChunks = [];
+  let currentSize  = 0;
+  let totalSize    = 0;
+  let totalReceived = 0;
+  let fileCount    = 0;
+  let startTime    = 0;
 
   function initRecv() {
     const keyInput   = $('key-input');
@@ -294,13 +493,11 @@ const recvMgr = (() => {
       const val = keyInput.value.replace(/\D/g, '').slice(0, 6);
       keyInput.value = val;
 
-      // Update digit boxes
       digitBoxes.forEach((box, i) => {
         box.textContent = val[i] || '';
         box.classList.toggle('filled', !!val[i]);
       });
 
-      // Enable/disable button
       if (val.length === 6) {
         btnReceive.disabled = false;
         btnReceive.classList.remove('btn-disabled');
@@ -315,107 +512,204 @@ const recvMgr = (() => {
     });
 
     btnReceive.addEventListener('click', startReceive);
-    $('btn-download')?.addEventListener('click', startDownload);
     $('btn-recv-reset')?.addEventListener('click', resetRecv);
     $('btn-recv-error-reset')?.addEventListener('click', resetRecv);
   }
 
-  /* ── Receive flow (poll server for key) ──────────────────────────────── */
-  function startReceive() {
+  /* ── Receive flow ────────────────────────────────────────────────────── */
+  async function startReceive() {
     const keyInput = $('key-input');
     const key = keyInput?.value;
     if (!key || key.length < 6) return;
     currentKey = key;
+
     showState('searching');
     $('recv-searching-key').textContent = `Key: ${key}`;
-    pollForKey(key);
-  }
 
-  function pollForKey(key) {
-    let attempts = 0;
-    const iv = setInterval(async () => {
-      attempts++;
-      try {
-        const res = await fetch(`/api/check/${key}`);
-        const data = await res.json();
+    try {
+      // 1. Fetch sender's offer from signaling server
+      const res = await fetch(`/api/signal?key=${key}`);
+      const data = await res.json();
 
-        if (data.exists) {
-          clearInterval(iv);
-          // Fetch the actual files
-          const dlRes = await fetch(`/api/download/${key}`);
-          if (dlRes.ok) {
-            const dlData = await dlRes.json();
-            recvData = dlData;
-            showState('found');
-            animateIn($('recv-found'));
-            renderFoundFiles(dlData.files);
-          } else {
-            clearInterval(iv);
-            showState('error');
-            animateIn($('recv-error'));
-          }
-        } else if (attempts > 30) {
-          clearInterval(iv);
-          showState('error');
-          animateIn($('recv-error'));
-        }
-      } catch {
-        /* keep polling */
+      if (!data.exists || !data.offer) {
+        showState('error');
+        animateIn($('recv-error'));
+        return;
       }
-    }, 1000);
+
+      // 2. Show files that will be received
+      showState('found');
+      animateIn($('recv-found'));
+      renderFoundFiles(data.filesMeta);
+
+      // Store offer for when user clicks download
+      $('btn-download').onclick = () => connectAndReceive(key, data.offer);
+
+    } catch (err) {
+      console.error('Receive error:', err);
+      showState('error');
+      animateIn($('recv-error'));
+    }
   }
 
   function renderFoundFiles(fileList) {
     const list  = $('recv-file-list');
     const label = $('btn-download-label');
     list.innerHTML = fileList.map((f) => fileRowHTML(f.name, f.size)).join('');
-    label.textContent = `Download ${fileList.length} file${fileList.length > 1 ? 's' : ''}`;
+    const total = fileList.reduce((s, f) => s + f.size, 0);
+    label.textContent = `Download ${fileList.length} file${fileList.length > 1 ? 's' : ''} (${fmtSize(total)})`;
   }
 
-  function startDownload() {
-    if (!recvData || !recvData.files) return;
+  /* ── Connect via WebRTC and receive files ─────────────────────────────── */
+  async function connectAndReceive(key, offer) {
     showState('downloading');
-    let p = 0;
-    const bar = $('recv-bar');
-    const pct = $('recv-pct');
-    const iv  = setInterval(() => {
-      p += Math.random() * 18 + 8;
-      if (p >= 100) {
-        p = 100; clearInterval(iv);
-        bar.style.width = '100%'; pct.textContent = '100%';
-        setTimeout(() => {
-          triggerDownloads(recvData.files);
-          showState('done');
-          animateIn($('recv-done'));
-        }, 200);
-        return;
-      }
-      bar.style.width = p + '%';
-      pct.textContent = Math.round(p) + '%';
-    }, 140);
+    if ($('recv-status')) $('recv-status').textContent = 'Establishing P2P connection…';
+
+    try {
+      // 1. Create RTCPeerConnection
+      pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+
+      // 2. Handle incoming DataChannel
+      pc.ondatachannel = (event) => {
+        const dc = event.channel;
+        dc.binaryType = 'arraybuffer';
+
+        dc.onmessage = (e) => handleDataChannelMessage(e.data);
+
+        dc.onerror = (err) => {
+          console.error('DataChannel error:', err);
+        };
+
+        dc.onopen = () => {
+          startTime = Date.now();
+          if ($('recv-status')) $('recv-status').textContent = 'Connected! Receiving files…';
+        };
+      };
+
+      // 3. Gather ICE candidates
+      const iceCandidates = [];
+      const iceGatheringDone = new Promise((resolve) => {
+        pc.onicecandidate = (e) => {
+          if (e.candidate) {
+            iceCandidates.push(e.candidate.toJSON());
+          } else {
+            resolve();
+          }
+        };
+        setTimeout(resolve, 5000);
+      });
+
+      // 4. Set remote offer and create answer
+      await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+
+      // Wait for ICE gathering
+      await iceGatheringDone;
+
+      // 5. Send answer back to signaling server
+      const res = await fetch('/api/signal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'answer',
+          key,
+          answer: pc.localDescription.toJSON(),
+          candidates: iceCandidates,
+        }),
+      });
+
+      if (!res.ok) throw new Error('Failed to send answer');
+
+    } catch (err) {
+      console.error('WebRTC connect error:', err);
+      showState('error');
+      animateIn($('recv-error'));
+    }
   }
 
-  /**
-   * Convert base64 string back to binary and trigger browser download.
-   */
-  function triggerDownloads(files) {
-    files.forEach((f) => {
-      // Decode base64 to binary
-      const binaryStr = atob(f.data);
-      const bytes = new Uint8Array(binaryStr.length);
-      for (let i = 0; i < binaryStr.length; i++) {
-        bytes[i] = binaryStr.charCodeAt(i);
+  /* ── Handle incoming DataChannel messages ─────────────────────────────── */
+  function handleDataChannelMessage(data) {
+    if (typeof data === 'string') {
+      // Control message (JSON)
+      const msg = JSON.parse(data);
+
+      if (msg.type === 'meta') {
+        fileCount = msg.fileCount;
+        totalSize = msg.totalSize;
+        totalReceived = 0;
+        receivedFiles = [];
       }
-      const blob = new Blob([bytes], { type: f.type });
-      const url  = URL.createObjectURL(blob);
-      const a    = document.createElement('a');
-      a.href = url; a.download = f.name; a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+
+      if (msg.type === 'fileStart') {
+        currentFile = {
+          name: msg.name,
+          size: msg.size,
+          mimeType: msg.mimeType,
+        };
+        currentChunks = [];
+        currentSize = 0;
+      }
+
+      if (msg.type === 'fileEnd') {
+        // Assemble file from chunks
+        const blob = new Blob(currentChunks, { type: currentFile.mimeType });
+        receivedFiles.push({
+          name: currentFile.name,
+          blob,
+        });
+        currentFile = null;
+        currentChunks = [];
+        currentSize = 0;
+      }
+
+      if (msg.type === 'allDone') {
+        // All files received — trigger downloads
+        finishDownload();
+      }
+
+    } else {
+      // Binary data — file chunk
+      currentChunks.push(data);
+      currentSize += data.byteLength;
+      totalReceived += data.byteLength;
+
+      // Update progress
+      const pct = totalSize > 0 ? Math.round((totalReceived / totalSize) * 100) : 0;
+      const elapsed = (Date.now() - startTime) / 1000;
+      const speed = elapsed > 0 ? totalReceived / elapsed : 0;
+
+      if ($('recv-bar')) $('recv-bar').style.width = pct + '%';
+      if ($('recv-pct')) $('recv-pct').textContent = pct + '%';
+      if ($('recv-speed')) $('recv-speed').textContent = fmtSpeed(speed);
+    }
+  }
+
+  function finishDownload() {
+    // Trigger browser downloads for all files
+    receivedFiles.forEach(({ name, blob }) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 30_000);
     });
+
+    showState('done');
+    animateIn($('recv-done'));
+
+    // Cleanup
+    if (pc) { try { pc.close(); } catch {} pc = null; }
   }
 
   function resetRecv() {
-    recvData = null; currentKey = '';
+    if (pc) { try { pc.close(); } catch {} pc = null; }
+    receivedFiles = [];
+    currentFile = null;
+    currentChunks = [];
+    currentKey = '';
+
     const keyInput   = $('key-input');
     const btnReceive = $('btn-receive');
     const digitBoxes = document.querySelectorAll('.digit-box');
@@ -428,6 +722,7 @@ const recvMgr = (() => {
     }
     if ($('recv-bar')) $('recv-bar').style.width = '0%';
     if ($('recv-pct')) $('recv-pct').textContent = '0%';
+    if ($('recv-speed')) $('recv-speed').textContent = '';
     showState('idle');
   }
 
