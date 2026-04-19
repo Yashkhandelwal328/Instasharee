@@ -463,7 +463,7 @@ const sendMgr = (() => {
     show($(STATES[name]));
   }
 
-  return { initSend, removeFile };
+  return { initSend, removeFile, addFiles, startSend, getFiles: () => files };
 })();
 
 /* ══════════════════════════════════════════════════════════════════════════════
@@ -737,6 +737,238 @@ const recvMgr = (() => {
   }
 
   return { initRecv };
+  return { initRecv, connectAndReceive };
+})();
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   NEARBY MANAGER — LAN device discovery & instant transfer
+══════════════════════════════════════════════════════════════════════════════ */
+const nearbyMgr = (() => {
+  let sse = null;
+  let myDeviceId = '';
+  let nearbyDevices = [];
+  let pendingTransfer = null; // incoming transfer request
+
+  /* ── Device name from User-Agent ─────────────────────────────────────── */
+  function getDeviceName() {
+    const ua = navigator.userAgent;
+    // Mobile devices
+    if (/iPhone/.test(ua)) return 'iPhone';
+    if (/iPad/.test(ua)) return 'iPad';
+    if (/Android/.test(ua)) {
+      const match = ua.match(/;\s*([^;)]+)\s*Build/);
+      if (match) return match[1].trim().slice(0, 16);
+      return 'Android';
+    }
+    // Desktop browsers
+    const os = /Mac/.test(ua) ? 'Mac' : /Win/.test(ua) ? 'Windows' : /Linux/.test(ua) ? 'Linux' : 'Desktop';
+    const browser = /Edg\//.test(ua) ? 'Edge' : /Chrome/.test(ua) ? 'Chrome' : /Firefox/.test(ua) ? 'Firefox' : /Safari/.test(ua) ? 'Safari' : 'Browser';
+    return `${browser} · ${os}`;
+  }
+
+  /* ── Avatar colors (deterministic from name) ─────────────────────────── */
+  const AVATAR_COLORS = [
+    '#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981',
+    '#6366f1', '#ef4444', '#14b8a6', '#f97316', '#06b6d4',
+  ];
+  function avatarColor(name) {
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) hash = ((hash << 5) - hash) + name.charCodeAt(i);
+    return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+  }
+  function avatarInitials(name) {
+    const parts = name.split(/[·\s-]+/).filter(Boolean);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return name.slice(0, 2).toUpperCase();
+  }
+
+  /* ── Initialize ──────────────────────────────────────────────────────── */
+  function initNearby() {
+    const deviceName = getDeviceName();
+
+    // Connect to nearby SSE
+    sse = new EventSource(`/api/nearby?name=${encodeURIComponent(deviceName)}`);
+
+    sse.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+
+        if (msg.type === 'registered') {
+          myDeviceId = msg.deviceId;
+        }
+
+        if (msg.type === 'devices') {
+          nearbyDevices = msg.devices || [];
+          renderNearbyDevices();
+        }
+
+        if (msg.type === 'transfer-request') {
+          showTransferNotification(msg);
+        }
+
+      } catch { /* ignore parse errors */ }
+    };
+
+    sse.onerror = () => {
+      // Will auto-reconnect
+    };
+
+    // Setup notification button handlers
+    $('btn-accept-transfer')?.addEventListener('click', acceptTransfer);
+    $('btn-decline-transfer')?.addEventListener('click', declineTransfer);
+  }
+
+  /* ── Render nearby device list ───────────────────────────────────────── */
+  function renderNearbyDevices() {
+    const container = $('nearby-devices');
+    const countEl = $('nearby-count');
+    const emptyEl = $('nearby-empty');
+    if (!container) return;
+
+    countEl.textContent = nearbyDevices.length;
+
+    if (nearbyDevices.length === 0) {
+      container.innerHTML = '';
+      container.appendChild(emptyEl || createEmptyEl());
+      show(emptyEl);
+      return;
+    }
+
+    if (emptyEl) hide(emptyEl);
+
+    container.innerHTML = nearbyDevices.map((dev) => {
+      const color = avatarColor(dev.name);
+      const initials = avatarInitials(dev.name);
+      return `
+        <div class="nearby-device" data-device-id="${dev.id}" onclick="nearbyMgr.sendToDevice('${dev.id}', '${escapeHtml(dev.name)}')">
+          <div class="nearby-avatar" style="background: ${color}">${initials}</div>
+          <span class="nearby-name">${escapeHtml(dev.name)}</span>
+        </div>`;
+    }).join('');
+  }
+
+  function createEmptyEl() {
+    const el = document.createElement('div');
+    el.id = 'nearby-empty';
+    el.className = 'nearby-empty';
+    el.innerHTML = '<div class="nearby-scan"><div class="scan-ring"></div></div><span>Scanning for devices…</span>';
+    return el;
+  }
+
+  /* ── Send to a nearby device (click handler) ─────────────────────────── */
+  async function sendToDevice(deviceId, deviceName) {
+    const currentFiles = sendMgr.getFiles();
+
+    if (!currentFiles || currentFiles.length === 0) {
+      // No files selected yet — open file picker first
+      const fileInput = $('file-input');
+      if (!fileInput) return;
+
+      // One-time listener for file selection
+      const handler = async () => {
+        fileInput.removeEventListener('change', handler);
+        const selected = Array.from(fileInput.files);
+        if (selected.length === 0) return;
+        sendMgr.addFiles(selected);
+        await initiateSendToDevice(deviceId, deviceName);
+      };
+      fileInput.addEventListener('change', handler);
+      fileInput.click();
+      return;
+    }
+
+    await initiateSendToDevice(deviceId, deviceName);
+  }
+
+  async function initiateSendToDevice(deviceId, deviceName) {
+    // Start the normal send flow — it creates the signaling room
+    // Then notify the target device with the key
+    try {
+      // Switch to Send tab
+      const sendTab = document.querySelector('[data-tab="send"]');
+      if (sendTab) sendTab.click();
+
+      // Start the P2P send flow
+      await sendMgr.startSend();
+
+      // Wait a moment for the key to be generated
+      await new Promise(r => setTimeout(r, 500));
+
+      // Get the generated key from the UI
+      const keyDigits = $('send-key-digits');
+      if (!keyDigits) return;
+      const key = Array.from(keyDigits.querySelectorAll('.key-digit')).map(d => d.textContent).join('');
+      if (!key || key.length !== 6) return;
+
+      // Get file metadata
+      const files = sendMgr.getFiles();
+      const filesMeta = files.map(({ file }) => ({
+        name: file.name,
+        size: file.size,
+        type: file.type || 'application/octet-stream',
+      }));
+
+      // Notify the target device
+      await fetch('/api/nearby', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'transfer-request',
+          targetId: deviceId,
+          senderId: myDeviceId,
+          senderName: getDeviceName(),
+          key,
+          filesMeta,
+        }),
+      });
+
+    } catch (err) {
+      console.error('Send to device error:', err);
+    }
+  }
+
+  /* ── Incoming transfer notification ──────────────────────────────────── */
+  function showTransferNotification(msg) {
+    pendingTransfer = msg;
+
+    $('transfer-notify-from').textContent = `from ${msg.fromName}`;
+    $('transfer-notify-files').innerHTML = msg.filesMeta.map(
+      (f) => fileRowHTML(f.name, f.size)
+    ).join('');
+
+    show($('transfer-notify'));
+  }
+
+  function acceptTransfer() {
+    if (!pendingTransfer) return;
+    hide($('transfer-notify'));
+
+    // Switch to Receive tab
+    const recvTab = document.querySelector('[data-tab="receive"]');
+    if (recvTab) recvTab.click();
+
+    // Auto-fill the key and trigger receive
+    const keyInput = $('key-input');
+    if (keyInput) {
+      keyInput.value = pendingTransfer.key;
+      keyInput.dispatchEvent(new Event('input'));
+    }
+
+    // Auto-click receive button after a short delay
+    setTimeout(() => {
+      const btnReceive = $('btn-receive');
+      if (btnReceive && !btnReceive.disabled) btnReceive.click();
+    }, 300);
+
+    pendingTransfer = null;
+  }
+
+  function declineTransfer() {
+    hide($('transfer-notify'));
+    pendingTransfer = null;
+  }
+
+  return { initNearby, sendToDevice };
 })();
 
 /* ══════════════════════════════════════════════════════════════════════════════
@@ -746,6 +978,7 @@ function bootstrap() {
   initTabs();
   sendMgr.initSend();
   recvMgr.initRecv();
+  nearbyMgr.initNearby();
 }
 
 if (document.readyState === 'loading') {

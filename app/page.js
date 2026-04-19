@@ -102,6 +102,31 @@ export default function Home() {
             </button>
           </div>
 
+          {/* Nearby Devices Section */}
+          <div id="nearby-section" className="nearby-section">
+            <div className="nearby-header">
+              <div className="nearby-title-row">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M5 12.55a11 11 0 0 1 14.08 0" />
+                  <path d="M1.42 9a16 16 0 0 1 21.16 0" />
+                  <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
+                  <circle cx="12" cy="20" r="1" fill="currentColor" />
+                </svg>
+                <span>Nearby Devices</span>
+                <span id="nearby-count" className="nearby-count">0</span>
+              </div>
+              <span className="nearby-hint">Same WiFi network</span>
+            </div>
+            <div id="nearby-devices" className="nearby-devices">
+              <div id="nearby-empty" className="nearby-empty">
+                <div className="nearby-scan">
+                  <div className="scan-ring"></div>
+                </div>
+                <span>Scanning for devices…</span>
+              </div>
+            </div>
+          </div>
+
           {/* Card Body */}
           <div className="card-body">
             {/* ══ SEND PANEL ══ */}
@@ -270,6 +295,35 @@ export default function Home() {
           </div>
         </div>
       </main>
+
+      {/* Incoming Transfer Request Notification */}
+      <div id="transfer-notify" className="transfer-notify hidden">
+        <div className="transfer-notify-card">
+          <div className="transfer-notify-header">
+            <div className="transfer-notify-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+            </div>
+            <div>
+              <p className="transfer-notify-title">Incoming Transfer</p>
+              <p id="transfer-notify-from" className="transfer-notify-from"></p>
+            </div>
+          </div>
+          <ul id="transfer-notify-files" className="file-list"></ul>
+          <div className="transfer-notify-actions">
+            <button id="btn-accept-transfer" className="btn-primary btn-icon">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              Accept
+            </button>
+            <button id="btn-decline-transfer" className="btn-secondary">Decline</button>
+          </div>
+        </div>
+      </div>
 
       <footer className="footer">
         Our never-ending goal is to make file transfer <em>Easier, Faster, and Safer.</em>
