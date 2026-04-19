@@ -1,3 +1,5 @@
+import Script from 'next/script';
+
 export const metadata = {
   title: 'instashare.io — P2P File Transfer',
   description: 'Transfer files instantly, peer-to-peer. No account needed. Share a 6-digit key.',
@@ -20,7 +22,7 @@ export default function RootLayout({ children }) {
       </head>
       <body>
         {children}
-        <script src="/app.js" defer></script>
+        <Script src="/app.js" strategy="afterInteractive" />
       </body>
     </html>
   );
