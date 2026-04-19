@@ -447,8 +447,14 @@ const recvMgr = (() => {
 /* ══════════════════════════════════════════════════════════════════════════════
    BOOTSTRAP — wait for DOM then init
 ══════════════════════════════════════════════════════════════════════════════ */
-document.addEventListener('DOMContentLoaded', () => {
+function bootstrap() {
   initTabs();
   sendMgr.initSend();
   recvMgr.initRecv();
-});
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', bootstrap);
+} else {
+  bootstrap();
+}
