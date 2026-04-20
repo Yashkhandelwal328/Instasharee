@@ -972,7 +972,7 @@ const nearbyMgr = (() => {
     pendingTransfer = null;
   }
 
-  return { initNearby, sendToDevice };
+  return { initNearby, sendToDevice, getDeviceName };
 })();
 
 /* ══════════════════════════════════════════════════════════════════════════════
@@ -1049,36 +1049,63 @@ const friendsMgr = (() => {
       return;
     }
 
+    // Switch to Send tab
+    const sendTab = document.querySelector('[data-tab="send"]');
+    if (sendTab) sendTab.click();
+
     // Trigger the send process if not already started
     const btnSend = $('btn-send');
     if (btnSend && !btnSend.disabled && !btnSend.classList.contains('btn-disabled')) {
-      btnSend.click();
+      await sendMgr.startSend();
     }
     
-    // Wait for the key to be generated (we poll the send-key-digits for a short time)
-    let attempts = 0;
-    const checkKey = setInterval(async () => {
-      const keyDigits = $('send-key-digits').textContent;
-      if (keyDigits && keyDigits.length === 6) {
-        clearInterval(checkKey);
-        
-        // Generate the exact deep link
-        const url = `${window.location.origin}/?key=${keyDigits}`;
-        
-        // Copy to clipboard
-        try {
-          await navigator.clipboard.writeText(url);
-          alert(`Secure link for ${friend.name} copied to clipboard!\n\nPaste it to them anywhere.`);
-        } catch (err) {
-          alert(`Link ready! Send this direct link to ${friend.name}:\n\n${url}`);
-        }
+    // Wait for the key to be generated
+    await new Promise(r => setTimeout(r, 600));
+    
+    // Get the generated key from the UI
+    const keyDigits = $('send-key-digits');
+    if (!keyDigits) return;
+    const key = Array.from(keyDigits.querySelectorAll('.key-digit')).map(d => d.textContent).join('');
+    if (!key || key.length !== 6) return;
+
+    // Get file metadata
+    const files = sendMgr.getFiles();
+    const filesMeta = files.map(({ file }) => ({
+      name: file.name,
+      size: file.size,
+      type: file.type || 'application/octet-stream',
+    }));
+
+    // Attempt to push request directly to device via backend
+    try {
+      const res = await fetch('/api/nearby', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'transfer-request',
+          targetName: friend.name,
+          senderName: nearbyMgr.getDeviceName(),
+          key,
+          filesMeta,
+        }),
+      });
+
+      if (res.ok) {
+        // Friend is online and received the ping!
+        return;
       }
-      
-      attempts++;
-      if (attempts > 20) {
-        clearInterval(checkKey);
-      }
-    }, 200);
+    } catch (err) {
+      console.warn("Target not explicitly online via LAN:", err);
+    }
+
+    // Fallback: copy to clipboard
+    const url = `${window.location.origin}/?key=${key}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      alert(`Sent request to network but ${friend.name} might be offline.\nSecure link copied to clipboard!\n\nPaste it to them anywhere.`);
+    } catch (err) {
+      alert(`${friend.name} might be offline. Send this direct link to ${friend.name}:\n\n${url}`);
+    }
   }
 
   function initFriends() {

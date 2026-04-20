@@ -95,6 +95,18 @@ public class NearbyService {
     }
 
     /**
+     * Send a transfer request to a specific device by its name (if on same IP).
+     */
+    public boolean sendTransferRequestByName(String targetName, String ip, Map<String, Object> request) {
+        for (NearbyDevice dev : devices.values()) {
+            if (dev.getIp().equals(ip) && dev.getName().equalsIgnoreCase(targetName)) {
+                return sendTransferRequest(dev.getId(), request);
+            }
+        }
+        return false;
+    }
+
+    /**
      * Send an SSE event to all emitters of a device.
      */
     private void sendToDevice(NearbyDevice device, Map<String, Object> event) {

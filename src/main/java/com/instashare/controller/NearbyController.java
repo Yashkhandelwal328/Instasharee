@@ -92,17 +92,24 @@ public class NearbyController {
 
     /* ─── POST: Send a transfer request to a nearby device ──────────────── */
     @PostMapping
-    public ResponseEntity<?> handlePost(@RequestBody Map<String, Object> body) {
+    public ResponseEntity<?> handlePost(@RequestBody Map<String, Object> body, HttpServletRequest request) {
         String action = (String) body.get("action");
 
         if ("transfer-request".equals(action)) {
             String targetId = (String) body.get("targetId");
+            String targetName = (String) body.get("targetName");
 
-            if (targetId == null) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Missing targetId"));
+            if (targetId == null && targetName == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Missing targetId or targetName"));
             }
 
-            boolean sent = nearbyService.sendTransferRequest(targetId, body);
+            boolean sent = false;
+            if (targetId != null) {
+                sent = nearbyService.sendTransferRequest(targetId, body);
+            } else if (targetName != null) {
+                sent = nearbyService.sendTransferRequestByName(targetName, getClientIP(request), body);
+            }
+
             if (!sent) {
                 return ResponseEntity.status(404).body(Map.of("error", "Device not found"));
             }
