@@ -1083,9 +1083,145 @@ const friendsMgr = (() => {
 })();
 
 /* ══════════════════════════════════════════════════════════════════════════════
+   AUTH MANAGER — Local storage login logic
+══════════════════════════════════════════════════════════════════════════════ */
+const authMgr = (() => {
+  let session = null;
+
+  function loadSession() {
+    try {
+      session = JSON.parse(localStorage.getItem('instashare_session'));
+    } catch {
+      session = null;
+    }
+  }
+
+  function saveSession(data) {
+    session = data;
+    if (data) {
+      localStorage.setItem('instashare_session', JSON.stringify(data));
+    } else {
+      localStorage.removeItem('instashare_session');
+    }
+  }
+
+  function updateUI() {
+    const overlay = $('auth-overlay');
+    const userProfile = $('user-profile');
+    const headerSignIn = $('btn-header-sign-in');
+
+    if (!overlay || !userProfile || !headerSignIn) return;
+
+    if (session) {
+      // Hide login overlay
+      hide(overlay);
+      
+      // Update header
+      hide(headerSignIn);
+      show(userProfile);
+      
+      // Set user details
+      const userName = $('user-name');
+      const userAvatar = $('user-avatar');
+      
+      if (userName && userAvatar) {
+        userName.textContent = session.name;
+        userAvatar.textContent = session.name.substring(0, 1).toUpperCase();
+        userAvatar.style.background = session.color || '#3b82f6';
+      }
+    } else {
+      // Show login overlay
+      show(overlay);
+      
+      // Update header
+      show(headerSignIn);
+      hide(userProfile);
+    }
+  }
+
+  function getHSL(name) {
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    return `hsl(${Math.abs(hash) % 360}, 65%, 45%)`;
+  }
+
+  function loginGoogle() {
+    const btn = $('btn-auth-google');
+    if (!btn) return;
+    const spinner = btn.querySelector('.auth-btn-spinner');
+    
+    // Simulate loading
+    if (spinner) show(spinner);
+    btn.style.pointerEvents = 'none';
+    
+    setTimeout(() => {
+      if (spinner) hide(spinner);
+      btn.style.pointerEvents = 'auto';
+      
+      // Assign fake Google session
+      const name = "Google User";
+      saveSession({
+        type: 'google',
+        name,
+        color: getHSL(name)
+      });
+      updateUI();
+    }, 1500);
+  }
+
+  function loginGuest() {
+    saveSession({
+      type: 'guest',
+      name: "Guest",
+      color: '#64748b'
+    });
+    updateUI();
+  }
+
+  function logout() {
+    saveSession(null);
+    updateUI();
+  }
+
+  function initAuth() {
+    loadSession();
+    updateUI();
+    
+    const btnGoogle = $('btn-auth-google');
+    const btnGuest = $('btn-auth-guest');
+    const btnHeaderSign = $('btn-header-sign-in');
+    const btnSignOut = $('btn-sign-out');
+
+    if (btnGoogle) {
+      // Ensure we clear existing listeners if initAuth run multiple times
+      btnGoogle.replaceWith(btnGoogle.cloneNode(true));
+      $('btn-auth-google').addEventListener('click', loginGoogle);
+    }
+    if (btnGuest) {
+      btnGuest.replaceWith(btnGuest.cloneNode(true));
+      $('btn-auth-guest').addEventListener('click', loginGuest);
+    }
+    if (btnSignOut) {
+      btnSignOut.replaceWith(btnSignOut.cloneNode(true));
+      $('btn-sign-out').addEventListener('click', logout);
+    }
+    if (btnHeaderSign) {
+      btnHeaderSign.replaceWith(btnHeaderSign.cloneNode(true));
+      $('btn-header-sign-in').addEventListener('click', () => {
+         saveSession(null);
+         updateUI();
+      });
+    }
+  }
+
+  return { initAuth };
+})();
+
+/* ══════════════════════════════════════════════════════════════════════════════
    BOOTSTRAP — wait for DOM then init
 ══════════════════════════════════════════════════════════════════════════════ */
 function bootstrap() {
+  authMgr.initAuth();
   initTabs();
   sendMgr.initSend();
   recvMgr.initRecv();
