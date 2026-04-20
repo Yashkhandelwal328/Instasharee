@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>instashare.io — P2P File Transfer</title>
+  <meta name="description" content="Transfer files instantly, peer-to-peer. No account needed. Share a 6-digit key." />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="app-container">
+    <!-- Auth Overlay -->
+    <div id="auth-overlay" class="auth-overlay">
+      <div class="auth-card animate-scale-in">
+        <div class="auth-logo">
+          <div class="logo-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+            </svg>
+          </div>
+        </div>
+        <h2 class="auth-title">Welcome to instashare</h2>
+        <p class="auth-sub">Sign in to start transferring files securely across any network.</p>
+
+        <div class="auth-actions">
+          <button id="btn-auth-google" class="btn-auth-google">
+            <span class="auth-btn-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+              </svg>
+            </span>
+            <span class="auth-btn-text">Continue with Google</span>
+            <div class="auth-btn-spinner spinner hidden"></div>
+          </button>
+          <div class="auth-divider"><span>or</span></div>
+          <button id="btn-auth-guest" class="btn-auth-guest">Continue as Guest</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-title">Friends</span>
+        <button id="btn-add-friend" class="btn-add-friend">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          Add
+        </button>
+      </div>
+      <ul id="friends-list" class="friends-list"></ul>
+      <div id="friends-empty" class="friends-empty">No friends added.</div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="app-content">
+      <!-- Background decorations -->
+      <div class="bg-blob bg-blob-1" aria-hidden="true"></div>
+      <div class="bg-blob bg-blob-2" aria-hidden="true"></div>
+      <div class="bg-noise" aria-hidden="true"></div>
+
+      <!-- Header -->
+      <header class="header">
+        <a href="/" class="logo">
+          <div class="logo-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+            </svg>
+          </div>
+          <span class="logo-text">instashare.io</span>
+        </a>
+        <nav class="nav">
+          <a href="#" class="nav-link">Transfer</a>
+          <a href="#" class="nav-link">Download</a>
+        </nav>
+        <div id="user-profile" class="user-profile hidden">
+          <div id="user-avatar" class="user-avatar">?</div>
+          <span id="user-name" class="user-name">Guest</span>
+          <button id="btn-sign-out" class="btn-sign-out">Sign out</button>
+        </div>
+        <button id="btn-header-sign-in" class="btn-sign-in">Sign in</button>
+      </header>
+
+      <!-- Main -->
+      <main class="main">
+        <!-- Hero -->
+        <div class="hero animate-fade-up">
+          <div class="badge">
+            <span class="badge-dot"></span>
+            P2P · End-to-End Encrypted
+          </div>
+          <h1 class="headline">
+            Transfer files<br />
+            <span class="accent">instantly.</span>
+          </h1>
+          <p class="subline">
+            No account needed. Share a 6-digit key.<br />
+            Files never touch our servers.
+          </p>
+          <ul class="features">
+            <li class="feature">
+              <div class="feature-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                </svg>
+              </div>
+              <div>
+                <strong>Direct P2P Transfer</strong>
+                <span>Files stream directly between devices — zero servers involved.</span>
+              </div>
+            </li>
+            <li class="feature">
+              <div class="feature-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                </svg>
+              </div>
+              <div>
+                <strong>End-to-End Encrypted</strong>
+                <span>WebRTC DTLS encryption. Nobody can intercept your files.</span>
+              </div>
+            </li>
+            <li class="feature">
+              <div class="feature-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="2" y1="12" x2="22" y2="12" />
+                  <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                </svg>
+              </div>
+              <div>
+                <strong>No Limits</strong>
+                <span>Any file type, any size, unlimited transfers.</span>
+              </div>
+            </li>
+          </ul>
+        </div>
+
+        <!-- Transfer Card -->
+        <div class="card animate-fade-up delay-200">
+          <!-- Tab Bar -->
+          <div class="tab-bar" role="tablist">
+            <button class="tab tab-active" data-tab="send" role="tab" aria-selected="true">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" y1="3" x2="12" y2="15" />
+              </svg>
+              Send
+            </button>
+            <button class="tab" data-tab="receive" role="tab" aria-selected="false">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              Receive
+            </button>
+          </div>
+
+          <!-- Nearby Devices Section -->
+          <div id="nearby-section" class="nearby-section">
+            <div class="nearby-header">
+              <div class="nearby-title-row">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M5 12.55a11 11 0 0 1 14.08 0" />
+                  <path d="M1.42 9a16 16 0 0 1 21.16 0" />
+                  <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
+                  <circle cx="12" cy="20" r="1" fill="currentColor" />
+                </svg>
+                <span>Nearby Devices</span>
+                <span id="nearby-count" class="nearby-count">0</span>
+              </div>
+              <span class="nearby-hint">Same WiFi network</span>
+            </div>
+            <div id="nearby-devices" class="nearby-devices">
+              <div id="nearby-empty" class="nearby-empty">
+                <div class="nearby-scan">
+                  <div class="scan-ring"></div>
+                </div>
+                <span>Scanning for devices…</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card Body -->
+          <div class="card-body">
+            <!-- ══ SEND PANEL ══ -->
+            <div id="panel-send" class="panel">
+              <!-- State: idle -->
+              <div id="send-idle">
+                <div id="drop-zone" class="drop-zone" tabindex="0" role="button" aria-label="Select files to send">
+                  <input type="file" id="file-input" multiple hidden />
+                  <div class="drop-icon-wrap">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <polyline points="17 8 12 3 7 8" />
+                      <line x1="12" y1="3" x2="12" y2="15" />
+                    </svg>
+                  </div>
+                  <p class="drop-text">Drop files here or <span class="drop-cta">browse</span></p>
+                  <p class="drop-sub">Any file · No size limits · Direct P2P</p>
+                </div>
+                <ul id="file-list" class="file-list hidden"></ul>
+                <button id="btn-send" class="btn-primary btn-disabled" disabled>Generate Key &amp; Send</button>
+              </div>
+
+              <!-- State: connecting (setting up WebRTC) -->
+              <div id="send-connecting" class="centered-panel hidden">
+                <div class="spinner" aria-label="Connecting"></div>
+                <p class="centered-title">Setting up P2P connection…</p>
+                <p class="centered-sub">Preparing secure direct channel</p>
+              </div>
+
+              <!-- State: waiting for peer -->
+              <div id="send-waiting" class="centered-panel hidden">
+                <p class="centered-label">Share this key with the receiver</p>
+                <div id="send-key-digits" class="key-digits"></div>
+                <div id="send-qr" class="qr-wrap"></div>
+                <p class="expires-text">Expires in <span id="expires-count" class="expires-count">10:00</span></p>
+                <div class="waiting-hint">
+                  <div class="pulse-ring"></div>
+                  <span>Waiting for peer to connect…</span>
+                </div>
+                <button id="btn-cancel-send" class="btn-secondary">Cancel</button>
+              </div>
+
+              <!-- State: transferring (P2P streaming) -->
+              <div id="send-transferring" class="centered-panel hidden">
+                <div class="p2p-status">
+                  <div class="p2p-dot p2p-dot-active"></div>
+                  <span>P2P Connected — Streaming files</span>
+                </div>
+                <p class="progress-label">Sending files…</p>
+                <div class="progress-track">
+                  <div id="send-bar" class="progress-fill" style="width: 0%"></div>
+                </div>
+                <div class="progress-meta">
+                  <span id="send-pct" class="progress-pct">0%</span>
+                  <span id="send-speed" class="progress-speed"></span>
+                </div>
+              </div>
+
+              <!-- State: done -->
+              <div id="send-done" class="centered-panel hidden">
+                <div class="success-icon">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                </div>
+                <p class="done-title">Transfer complete!</p>
+                <p id="send-done-sub" class="done-sub"></p>
+                <button id="btn-send-reset" class="btn-primary">Send more files</button>
+              </div>
+            </div>
+
+            <!-- ══ RECEIVE PANEL ══ -->
+            <div id="panel-receive" class="panel hidden">
+              <!-- State: idle -->
+              <div id="recv-idle">
+                <p class="instructions">Enter the 6-digit key from the sender</p>
+                <div id="recv-digit-row" class="digit-row">
+                  <div class="digit-box"></div>
+                  <div class="digit-box"></div>
+                  <div class="digit-box"></div>
+                  <div class="digit-box"></div>
+                  <div class="digit-box"></div>
+                  <div class="digit-box"></div>
+                </div>
+                <input
+                  type="text"
+                  id="key-input"
+                  inputmode="numeric"
+                  maxlength="6"
+                  placeholder="Enter 6-digit key"
+                  class="key-input"
+                  autocomplete="off"
+                />
+                <button id="btn-receive" class="btn-primary btn-icon btn-disabled" disabled>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                  Receive Files
+                </button>
+              </div>
+
+              <!-- State: searching -->
+              <div id="recv-searching" class="centered-panel hidden">
+                <div class="spinner" aria-label="Connecting"></div>
+                <p class="centered-title">Looking for sender…</p>
+                <p id="recv-searching-key" class="centered-sub"></p>
+              </div>
+
+              <!-- State: found -->
+              <div id="recv-found" class="centered-panel hidden">
+                <p class="centered-title">Files ready to receive</p>
+                <ul id="recv-file-list" class="file-list"></ul>
+                <button id="btn-download" class="btn-primary btn-icon">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                  <span id="btn-download-label">Download</span>
+                </button>
+              </div>
+
+              <!-- State: downloading (P2P receiving) -->
+              <div id="recv-downloading" class="centered-panel hidden">
+                <div class="p2p-status">
+                  <div class="p2p-dot p2p-dot-active"></div>
+                  <span id="recv-status">Establishing P2P connection…</span>
+                </div>
+                <p class="progress-label">Receiving…</p>
+                <div class="progress-track">
+                  <div id="recv-bar" class="progress-fill" style="width: 0%"></div>
+                </div>
+                <div class="progress-meta">
+                  <span id="recv-pct" class="progress-pct">0%</span>
+                  <span id="recv-speed" class="progress-speed"></span>
+                </div>
+              </div>
+
+              <!-- State: done -->
+              <div id="recv-done" class="centered-panel hidden">
+                <div class="success-icon">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                </div>
+                <p class="done-title">Download complete!</p>
+                <p class="done-sub">Files saved to your device</p>
+                <button id="btn-recv-reset" class="btn-primary">Receive more</button>
+              </div>
+
+              <!-- State: error -->
+              <div id="recv-error" class="centered-panel hidden">
+                <div class="error-icon">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </div>
+                <p class="done-title">Key not found</p>
+                <p class="done-sub">The key may have expired or be invalid.</p>
+                <button id="btn-recv-error-reset" class="btn-primary">Try again</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <!-- Incoming Transfer Request Notification -->
+      <div id="transfer-notify" class="transfer-notify hidden">
+        <div class="transfer-notify-card">
+          <div class="transfer-notify-header">
+            <div class="transfer-notify-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+            </div>
+            <div>
+              <p class="transfer-notify-title">Incoming Transfer</p>
+              <p id="transfer-notify-from" class="transfer-notify-from"></p>
+            </div>
+          </div>
+          <ul id="transfer-notify-files" class="file-list"></ul>
+          <div class="transfer-notify-actions">
+            <button id="btn-accept-transfer" class="btn-primary btn-icon">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              Accept
+            </button>
+            <button id="btn-decline-transfer" class="btn-secondary">Decline</button>
+          </div>
+        </div>
+      </div>
+
+      <footer class="footer">
+        Our never-ending goal is to make file transfer <em>Easier, Faster, and Safer.</em>
+      </footer>
+    </div>
+  </div>
+
+  <script src="/qrcode.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

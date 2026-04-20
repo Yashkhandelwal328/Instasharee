@@ -1,5 +1,9 @@
-com/instashare/service/FileSharer$FileSenderHandler.class
+com/instashare/model/SignalRoom.class
 com/instashare/InstashareApplication.class
-com/instashare/utils/UploadUtils.class
-com/instashare/service/FileSharer.class
-com/instashare/controller/FileController.class
+com/instashare/service/NearbyService.class
+com/instashare/controller/SignalController.class
+com/instashare/config/DatabaseConfig.class
+com/instashare/model/NearbyDevice.class
+com/instashare/config/WebConfig.class
+com/instashare/service/SignalService.class
+com/instashare/controller/NearbyController.class
