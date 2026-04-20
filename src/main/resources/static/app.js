@@ -742,8 +742,19 @@ const nearbyMgr = (() => {
   let nearbyDevices = [];
   let pendingTransfer = null; // incoming transfer request
 
-  /* ── Device name from User-Agent ─────────────────────────────────────── */
+  /* ── Device name from User-Agent OR Session Name ────────────────────── */
   function getDeviceName() {
+    // If user is logged in (not guest), use their name
+    try {
+      const sessionStr = localStorage.getItem('instashare_session');
+      if (sessionStr) {
+        const session = JSON.parse(sessionStr);
+        if (session && session.type === 'user' && session.name) {
+          return session.name;
+        }
+      }
+    } catch {}
+
     const ua = navigator.userAgent;
     // Mobile devices
     if (/iPhone/.test(ua)) return 'iPhone';
@@ -1145,28 +1156,29 @@ const authMgr = (() => {
     return `hsl(${Math.abs(hash) % 360}, 65%, 45%)`;
   }
 
-  function loginGoogle() {
-    const btn = $('btn-auth-google');
-    if (!btn) return;
-    const spinner = btn.querySelector('.auth-btn-spinner');
+  function loginUser() {
+    const inputUsername = $('auth-username');
+    const inputPassword = $('auth-password');
+    const username = inputUsername?.value?.trim();
+    const password = inputPassword?.value?.trim();
     
-    // Simulate loading
-    if (spinner) show(spinner);
-    btn.style.pointerEvents = 'none';
+    if (!username || !password) {
+      alert("Please enter both username and password.");
+      return;
+    }
     
-    setTimeout(() => {
-      if (spinner) hide(spinner);
-      btn.style.pointerEvents = 'auto';
-      
-      // Assign fake Google session
-      const name = "Google User";
-      saveSession({
-        type: 'google',
-        name,
-        color: getHSL(name)
-      });
-      updateUI();
-    }, 1500);
+    // Simulate user login
+    saveSession({
+      type: 'user',
+      name: username,
+      color: getHSL(username)
+    });
+    
+    // Clear inputs
+    inputUsername.value = '';
+    inputPassword.value = '';
+    
+    updateUI();
   }
 
   function loginGuest() {
@@ -1187,15 +1199,14 @@ const authMgr = (() => {
     loadSession();
     updateUI();
     
-    const btnGoogle = $('btn-auth-google');
+    const btnLogin = $('btn-auth-login');
     const btnGuest = $('btn-auth-guest');
     const btnHeaderSign = $('btn-header-sign-in');
     const btnSignOut = $('btn-sign-out');
 
-    if (btnGoogle) {
-      // Ensure we clear existing listeners if initAuth run multiple times
-      btnGoogle.replaceWith(btnGoogle.cloneNode(true));
-      $('btn-auth-google').addEventListener('click', loginGoogle);
+    if (btnLogin) {
+      btnLogin.replaceWith(btnLogin.cloneNode(true));
+      $('btn-auth-login').addEventListener('click', loginUser);
     }
     if (btnGuest) {
       btnGuest.replaceWith(btnGuest.cloneNode(true));
@@ -1227,6 +1238,14 @@ function bootstrap() {
   recvMgr.initRecv();
   nearbyMgr.initNearby();
   friendsMgr.initFriends();
+
+  // Sidebar toggle
+  const btnToggleSidebar = $('btn-toggle-sidebar');
+  if (btnToggleSidebar) {
+    btnToggleSidebar.addEventListener('click', () => {
+      document.querySelector('.sidebar')?.classList.toggle('open');
+    });
+  }
 
   // Check for auto-receive key in URL (from scanning QR code)
   const urlParams = new URLSearchParams(window.location.search);
