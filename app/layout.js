@@ -22,6 +22,7 @@ export default function RootLayout({ children }) {
       </head>
       <body>
         {children}
+        <Script src="/qrcode.min.js" strategy="beforeInteractive" />
         <Script src="/app.js" strategy="afterInteractive" />
       </body>
     </html>

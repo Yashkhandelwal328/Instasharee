@@ -92,31 +92,24 @@ function escapeHtml(str) {
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-/* ── QR Code SVG (pseudo-random, key-derived) ─────────────────────────────── */
-function qrSVG(value) {
-  const seed = parseInt(value) || 0;
-  let mods = '';
-  for (let i = 0; i < 48; i++) {
-    const x = 38 + (i % 6) * 8, y = 5 + Math.floor(i / 6) * 8;
-    if (((seed * 17 + i * 31) % 7) > 2) mods += `<rect x="${x}" y="${y}" width="6" height="6" fill="#0f172a"/>`;
+/* ── QR Code ─────────────────────────────────────────────────────────────── */
+async function generateQR(value) {
+  try {
+    const url = `${window.location.origin}/?key=${value}`;
+    const dataUrl = await QRCode.toDataURL(url, {
+      width: 108,
+      margin: 1,
+      color: {
+        dark: '#0f172a',
+        light: '#ffffff'
+      }
+    });
+    return `<img src="${dataUrl}" alt="QR Code" width="108" height="108" style="border-radius: 4px;" />
+    <span class="qr-key-label">${value}</span>`;
+  } catch (err) {
+    console.error('QR Generate Error:', err);
+    return `<span class="qr-key-label">${value}</span>`;
   }
-  for (let i = 0; i < 20; i++) {
-    const x = 5 + (i % 4) * 8, y = 40 + Math.floor(i / 4) * 8;
-    if (i % 3 === 0 || i % 5 === 1) mods += `<rect x="${x}" y="${y}" width="6" height="6" fill="#0f172a"/>`;
-  }
-  return `<svg viewBox="0 0 90 90" xmlns="http://www.w3.org/2000/svg">
-    <rect x="5"  y="5"  width="28" height="28" rx="3" fill="#0f172a"/>
-    <rect x="10" y="10" width="18" height="18" rx="2" fill="#fff"/>
-    <rect x="14" y="14" width="10" height="10" rx="1" fill="#0f172a"/>
-    <rect x="57" y="5"  width="28" height="28" rx="3" fill="#0f172a"/>
-    <rect x="62" y="10" width="18" height="18" rx="2" fill="#fff"/>
-    <rect x="66" y="14" width="10" height="10" rx="1" fill="#0f172a"/>
-    <rect x="5"  y="57" width="28" height="28" rx="3" fill="#0f172a"/>
-    <rect x="10" y="62" width="18" height="18" rx="2" fill="#fff"/>
-    <rect x="14" y="66" width="10" height="10" rx="1" fill="#0f172a"/>
-    ${mods}
-  </svg>
-  <span class="qr-key-label">${value}</span>`;
 }
 
 /* ── DOM helpers ──────────────────────────────────────────────────────────── */
@@ -304,7 +297,7 @@ const sendMgr = (() => {
       // Show waiting state with key
       showState('waiting');
       renderKeyDigits(sendKey);
-      $('send-qr').innerHTML = qrSVG(sendKey);
+      $('send-qr').innerHTML = await generateQR(sendKey);
       $('expires-count').textContent = fmtTime(expires);
 
       // Countdown timer
@@ -979,6 +972,35 @@ function bootstrap() {
   sendMgr.initSend();
   recvMgr.initRecv();
   nearbyMgr.initNearby();
+
+  // Check for auto-receive key in URL (from scanning QR code)
+  const urlParams = new URLSearchParams(window.location.search);
+  const autoKey = urlParams.get('key');
+  if (autoKey && autoKey.length === 6) {
+    // Wait a brief moment to ensure UI allows DOM updates
+    setTimeout(() => {
+      // Switch to Receive tab
+      const recvTab = document.querySelector('[data-tab="receive"]');
+      if (recvTab) recvTab.click();
+
+      // Auto-fill the key and trigger receive event
+      const keyInput = document.getElementById('key-input');
+      if (keyInput) {
+        keyInput.value = autoKey;
+        keyInput.dispatchEvent(new Event('input', { bubbles: true }));
+        keyInput.dispatchEvent(new Event('change', { bubbles: true }));
+        
+        // Auto-click receive button after a short delay
+        setTimeout(() => {
+          const btnReceive = document.getElementById('btn-receive');
+          if (btnReceive && !btnReceive.disabled) btnReceive.click();
+        }, 100);
+      }
+    }, 100);
+    
+    // Clean up the URL to prevent re-triggering on reload
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }
 }
 
 if (document.readyState === 'loading') {
