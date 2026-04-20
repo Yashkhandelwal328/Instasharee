@@ -1,29 +1,45 @@
 export default function Home() {
   return (
-    <>
-      {/* Background decorations */}
-      <div className="bg-blob bg-blob-1" aria-hidden="true"></div>
-      <div className="bg-blob bg-blob-2" aria-hidden="true"></div>
-      <div className="bg-noise" aria-hidden="true"></div>
-
-      {/* Header */}
-      <header className="header">
-        <a href="/" className="logo">
-          <div className="logo-icon">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5">
-              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+    <div className="app-container">
+      {/* Sidebar */}
+      <aside className="sidebar">
+        <div className="sidebar-header">
+          <span className="sidebar-title">Friends</span>
+          <button id="btn-add-friend" className="btn-add-friend">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="12" y1="5" x2="12" y2="19"/>
+              <line x1="5" y1="12" x2="19" y2="12"/>
             </svg>
-          </div>
-          <span className="logo-text">instashare.io</span>
-        </a>
-        <nav className="nav">
-          <a href="#" className="nav-link">Transfer</a>
-          <a href="#" className="nav-link">Product</a>
-          <a href="#" className="nav-link">Pricing</a>
-          <a href="#" className="nav-link">Download</a>
-        </nav>
-        <button className="btn-sign-in">Sign in</button>
-      </header>
+            Add
+          </button>
+        </div>
+        <ul id="friends-list" className="friends-list"></ul>
+        <div id="friends-empty" className="friends-empty">No friends added.</div>
+      </aside>
+
+      {/* Main Content */}
+      <div className="app-content">
+        {/* Background decorations */}
+        <div className="bg-blob bg-blob-1" aria-hidden="true"></div>
+        <div className="bg-blob bg-blob-2" aria-hidden="true"></div>
+        <div className="bg-noise" aria-hidden="true"></div>
+
+        {/* Header */}
+        <header className="header">
+          <a href="/" className="logo">
+            <div className="logo-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+              </svg>
+            </div>
+            <span className="logo-text">instashare.io</span>
+          </a>
+          <nav className="nav">
+            <a href="#" className="nav-link">Transfer</a>
+            <a href="#" className="nav-link">Download</a>
+          </nav>
+          <button className="btn-sign-in">Sign in</button>
+        </header>
 
       {/* Main */}
       <main className="main">
@@ -328,6 +344,7 @@ export default function Home() {
       <footer className="footer">
         Our never-ending goal is to make file transfer <em>Easier, Faster, and Safer.</em>
       </footer>
-    </>
+      </div>
+    </div>
   );
 }

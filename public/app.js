@@ -965,6 +965,124 @@ const nearbyMgr = (() => {
 })();
 
 /* ══════════════════════════════════════════════════════════════════════════════
+   FRIENDS MANAGER — Local storage friends list and quick share
+══════════════════════════════════════════════════════════════════════════════ */
+const friendsMgr = (() => {
+  let friends = [];
+
+  function loadFriends() {
+    try {
+      friends = JSON.parse(localStorage.getItem('instashare_friends')) || [];
+    } catch {
+      friends = [];
+    }
+  }
+
+  function saveFriends() {
+    localStorage.setItem('instashare_friends', JSON.stringify(friends));
+  }
+
+  function renderFriends() {
+    const list = $('friends-list');
+    const empty = $('friends-empty');
+    if (!list || !empty) return;
+
+    if (friends.length === 0) {
+      show(empty);
+      hide(list);
+      return;
+    }
+
+    hide(empty);
+    show(list);
+
+    list.innerHTML = friends.map((f, i) => `
+      <li class="friend-item" data-index="${i}">
+        <div class="friend-avatar" style="background: ${getHSL(f.name)}">
+          ${f.name.substring(0, 2).toUpperCase()}
+        </div>
+        <span class="friend-name">${escapeHTML(f.name)}</span>
+      </li>
+    `).join('');
+
+    // Bind click events for quick share
+    list.querySelectorAll('.friend-item').forEach(el => {
+      el.addEventListener('click', (e) => {
+        const index = e.currentTarget.getAttribute('data-index');
+        const friend = friends[index];
+        quickShareToFriend(friend);
+      });
+    });
+  }
+
+  function getHSL(name) {
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    return `hsl(${Math.abs(hash) % 360}, 65%, 45%)`;
+  }
+
+  function addFriend() {
+    const name = prompt("Enter friend's name:");
+    if (!name || !name.trim()) return;
+    
+    friends.push({ name: name.trim(), id: Date.now().toString() });
+    saveFriends();
+    renderFriends();
+  }
+
+  async function quickShareToFriend(friend) {
+    // Requires a file to be selected in the main panel
+    const fileList = document.querySelectorAll('#file-list .file-row');
+    if (!fileList || fileList.length === 0) {
+      alert(`Please select files to send to ${friend.name} first!`);
+      return;
+    }
+
+    // Trigger the send process if not already started
+    const btnSend = $('btn-send');
+    if (btnSend && !btnSend.disabled && !btnSend.classList.contains('btn-disabled')) {
+      btnSend.click();
+    }
+    
+    // Wait for the key to be generated (we poll the send-key-digits for a short time)
+    let attempts = 0;
+    const checkKey = setInterval(async () => {
+      const keyDigits = $('send-key-digits').textContent;
+      if (keyDigits && keyDigits.length === 6) {
+        clearInterval(checkKey);
+        
+        // Generate the exact deep link
+        const url = `${window.location.origin}/?key=${keyDigits}`;
+        
+        // Copy to clipboard
+        try {
+          await navigator.clipboard.writeText(url);
+          alert(`Secure link for ${friend.name} copied to clipboard!\n\nPaste it to them anywhere.`);
+        } catch (err) {
+          alert(`Link ready! Send this direct link to ${friend.name}:\n\n${url}`);
+        }
+      }
+      
+      attempts++;
+      if (attempts > 20) {
+        clearInterval(checkKey);
+      }
+    }, 200);
+  }
+
+  function initFriends() {
+    const btnAdd = $('btn-add-friend');
+    if (btnAdd) {
+      btnAdd.addEventListener('click', addFriend);
+    }
+    loadFriends();
+    renderFriends();
+  }
+
+  return { initFriends };
+})();
+
+/* ══════════════════════════════════════════════════════════════════════════════
    BOOTSTRAP — wait for DOM then init
 ══════════════════════════════════════════════════════════════════════════════ */
 function bootstrap() {
@@ -972,6 +1090,7 @@ function bootstrap() {
   sendMgr.initSend();
   recvMgr.initRecv();
   nearbyMgr.initNearby();
+  friendsMgr.initFriends();
 
   // Check for auto-receive key in URL (from scanning QR code)
   const urlParams = new URLSearchParams(window.location.search);
